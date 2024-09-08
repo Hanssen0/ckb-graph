@@ -1,101 +1,260 @@
-import Image from "next/image";
+"use client";
+
+import React, { useEffect, useState } from "react";
+import { ccc } from "@ckb-ccc/core";
+import { cccA } from "@ckb-ccc/core/advanced";
+import { Node, Edge, ForceGraph } from "./forceGraph";
+
+const client = new ccc.ClientPublicMainnet();
+const explorer = "https://explorer.nervos.org";
+
+async function addAddress(
+  address: string,
+  addresses: Node[],
+  setAddresses: (setter: (addresses: Node[]) => Node[]) => void
+) {
+  if (addresses.some((a) => a.id === address)) {
+    return;
+  }
+
+  const { script } = await ccc.Address.fromString(address, client);
+  const capacity = await client.getCellsCapacity({
+    script,
+    scriptSearchMode: "exact",
+    scriptType: "lock",
+  });
+  setAddresses((addresses) => {
+    if (addresses.some((a) => a.id === address)) {
+      return addresses;
+    }
+
+    const hash = script.hash();
+    const color = `hsl(${(
+      ccc.numFrom(hash) % ccc.numFrom(360)
+    ).toString()} 65% 45%)`;
+    const type = Object.entries(cccA.MAINNET_SCRIPTS).find(
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      ([_, s]) =>
+        script.codeHash === s?.codeHash && script.hashType === s?.hashType
+    );
+    return [
+      ...addresses,
+      {
+        id: address,
+        balance: capacity,
+        loaded: 0,
+        hasMore: "INITED",
+        type: type?.[0] ?? "Unknown",
+        color,
+        size: Math.max(-2, Math.log10(Number(capacity / ccc.One))) * 4 + 24,
+        x: 0,
+        y: 0,
+      },
+    ];
+  });
+}
+
+function addEdge(
+  source: string,
+  target: string,
+  volume: ccc.Num,
+  setEdges: (setter: (edges: Edge[]) => Edge[]) => void
+) {
+  setEdges((edges) => {
+    let existed = edges.find(
+      (e) => e.sourceId === source && e.targetId === target
+    );
+    if (!existed) {
+      existed = {
+        source,
+        target,
+        sourceId: source,
+        targetId: target,
+        value: volume,
+      };
+      return [...edges, existed];
+    } else {
+      existed.value += volume;
+      return [...edges];
+    }
+  });
+}
 
 export default function Home() {
-  return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-8 row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="https://nextjs.org/icons/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-semibold">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li>Save and see your changes instantly.</li>
-        </ol>
+  const [addresses, setAddresses] = useState<Node[]>([]);
+  const [edges, setEdges] = useState<Edge[]>([]);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [_, setTxs] = useState<Set<string>>(new Set());
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="https://nextjs.org/icons/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:min-w-44"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
-        </div>
-      </main>
-      <footer className="row-start-3 flex gap-6 flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
+  const [distance, setDistance] = useState<string>("450");
+  const [loadLimit, setLoadLimit] = useState<string>("100");
+  const [address, setAddress] = useState<string>("");
+
+  useEffect(() => {
+    addAddress(
+      "ckb1qzda0cr08m85hc8jlnfp3zer7xulejywt49kt2rr0vthywaa50xwsq0w7teyh77d48krwz2837wwejrppzw905cm588n0",
+      addresses,
+      setAddresses
+    );
+  }, []);
+
+  return (
+    <div className="w-full h-dvh flex flex-col">
+      <div className="w-full grow overflow-auto">
+        <ForceGraph
+          nodes={addresses}
+          edges={edges}
+          distance={Number(distance)}
+          onAddInputs={(node) => {
+            (async () => {
+              const { script } = await ccc.Address.fromString(node.id, client);
+
+              const { transactions, lastCursor } =
+                await client.findTransactionsPaged(
+                  {
+                    script,
+                    scriptType: "lock",
+                    scriptSearchMode: "exact",
+                    groupByTransaction: true,
+                  },
+                  "asc",
+                  loadLimit,
+                  node.hasMore === "INITED" ? undefined : node.hasMore
+                );
+              const hasMore =
+                transactions.length !== 0 &&
+                transactions.length >= Number(loadLimit);
+              node.loaded += transactions.length;
+              node.hasMore = hasMore ? lastCursor : undefined;
+              await Promise.all(
+                transactions.map(async ({ txHash }) => {
+                  while (true) {
+                    try {
+                      const tx = await client.getTransaction(txHash);
+                      if (!tx) {
+                        return;
+                      }
+                      await Promise.all(
+                        tx.transaction.inputs.map((i) =>
+                          i.completeExtraInfos(client)
+                        )
+                      );
+                      const spendVolume = tx.transaction.inputs
+                        .filter((i) => i.cellOutput!.lock.eq(script))
+                        .reduce(
+                          (acc, i) => acc + i.cellOutput!.capacity,
+                          ccc.Zero
+                        );
+                      const gotVolume = tx.transaction.outputs
+                        .filter((o) => o.lock.eq(script))
+                        .reduce((acc, o) => acc + o.capacity, ccc.Zero);
+
+                      if (spendVolume > gotVolume) {
+                        await Promise.all(
+                          Array.from(
+                            new Set(
+                              tx.transaction.outputs.map((o) =>
+                                ccc.Address.fromScript(
+                                  o.lock,
+                                  client
+                                ).toString()
+                              )
+                            ),
+                            (to) =>
+                              addAddress(to, addresses, setAddresses).then(
+                                () => {
+                                  setTxs((txs) => {
+                                    const key = `${txHash}${node.id}${to}`;
+                                    if (txs.has(key)) {
+                                      return txs;
+                                    }
+                                    txs.add(key);
+                                    addEdge(
+                                      node.id,
+                                      to,
+                                      spendVolume - gotVolume,
+                                      setEdges
+                                    );
+                                    return txs;
+                                  });
+                                }
+                              )
+                          )
+                        );
+                      }
+                      if (gotVolume > spendVolume) {
+                        await Promise.all(
+                          Array.from(
+                            new Set(
+                              tx.transaction.inputs.map((i) =>
+                                ccc.Address.fromScript(
+                                  i.cellOutput!.lock,
+                                  client
+                                ).toString()
+                              )
+                            ),
+                            async (from) => {
+                              await addAddress(from, addresses, setAddresses);
+                              setTxs((txs) => {
+                                const key = `${txHash}${from}${node.id}`;
+                                if (txs.has(key)) {
+                                  return txs;
+                                }
+                                txs.add(key);
+                                addEdge(
+                                  from,
+                                  node.id,
+                                  gotVolume - spendVolume,
+                                  setEdges
+                                );
+                                return txs;
+                              });
+                            }
+                          )
+                        );
+                      }
+                      break;
+                    } catch (err) {
+                      console.log(err);
+                    }
+                  }
+                })
+              );
+            })();
+          }}
+          onOpen={(node) =>
+            window.open(`${explorer}/address/${node.id}`, "_blank")
+          }
+        />
+      </div>
+      <div className="bg-[#000] p-4 text-white">
+        Distance
+        <input
+          className="mx-2 text-[#000] px-2"
+          placeholder="Distance"
+          value={distance}
+          onChange={(e) => setDistance(e.target.value)}
+        />
+        Load Limit
+        <input
+          className="mx-2 text-[#000] px-2"
+          placeholder="Load Limit"
+          value={loadLimit}
+          onChange={(e) => setLoadLimit(e.target.value)}
+        />
+        <button
+          className="bg-blue-400 px-2"
+          onClick={() => addAddress(address, addresses, setAddresses)}
         >
-          <Image
-            aria-hidden
-            src="https://nextjs.org/icons/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="https://nextjs.org/icons/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="https://nextjs.org/icons/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+          Add Address
+        </button>
+        <input
+          className="mx-2 text-[#000] px-2"
+          placeholder="Address to add"
+          value={address}
+          onChange={(e) => setAddress(e.target.value)}
+        />
+      </div>
     </div>
   );
 }

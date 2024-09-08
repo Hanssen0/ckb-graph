@@ -2,21 +2,9 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
 body {
-  color: var(--foreground);
-  background: var(--background);
+  color: #000;
+  background: #fff;
   font-family: Arial, Helvetica, sans-serif;
 }
 
@@ -24,4 +12,30 @@ body {
   .text-balance {
     text-wrap: balance;
   }
+}
+
+g.node {
+  cursor: pointer;
+}
+
+g.edge text,
+g.node text {
+  font-size: 16px;
+  font-weight: 100;
+  dominant-baseline: middle;
+  text-anchor: middle;
+}
+
+g.node text.type {
+  font-size: 12px;
+}
+
+svg line {
+  stroke: #222;
+  stroke-opacity: 0.2;
+}
+
+text {
+  fill: #000;
+  stroke: #000;
 }
